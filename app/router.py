@@ -5,8 +5,13 @@ from .services import (
     fetch_image_bytes, to_jpeg_bytes, put_to_minio,
 )
 from .config import settings
-
+from .redis_config import r
+import json
 router = APIRouter()
+
+def producer(queue_name: str, object_path: str):
+    r.lpush(queue_name, json.dumps({"object_path": object_path}))
+    print(f"Redis 큐에 작업 추가됨 → {queue_name}: {object_path}")
 
 @router.post("/drone/photos", response_model=IngestResponse)
 async def ingest_drone_photo(body: IngestRequest):
@@ -35,8 +40,11 @@ async def ingest_drone_photo(body: IngestRequest):
         # 5) MinIO 업로드
         put_to_minio(jpg, object_path, meta)
 
+        producer("infer_job_queue", object_path)
+
         return IngestResponse(message="success")
     except ValueError:
         return IngestResponse(message="parameter type error")
-    except Exception:
+    except Exception as e:
+        print(f"❌ 서버 내부 오류 발생: {e}")
         return IngestResponse(message="server internal error")

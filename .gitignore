@@ -206,3 +206,24 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# 환경 변수 파일 (비밀번호, 키 등 포함)
+.env
+.env.*
+
+# Python 가상환경 폴더
+venv/
+.venv/
+
+# Python 캐시 파일
+__pycache__/
+*.pyc
+
+# IDE 설정 파일 (예: VSCode, PyCharm)
+.vscode/
+.idea/
+
+# OS 관련 불필요 파일
+.DS_Store
+Thumbs.db
