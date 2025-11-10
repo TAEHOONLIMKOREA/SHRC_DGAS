@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, HttpUrl, field_validator
+from uuid import UUID
 from datetime import datetime
 
 # ---------------------------
@@ -11,6 +12,7 @@ class Position(BaseModel):
 
 class DataPayload(BaseModel):
     robot_id: str = Field(..., min_length=1)
+    imageId: UUID = Field(..., description="이미지 고유 식별자(UUID)")
     photo_Url: HttpUrl
     position: Position
     capturedAt: str  # ISO8601 형식 (예: "2025-08-05T05:42:33.390Z")

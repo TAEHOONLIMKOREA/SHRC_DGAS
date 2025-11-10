@@ -9,8 +9,9 @@ from .redis_config import r
 import json
 router = APIRouter()
 
-def producer(queue_name: str, object_path: str):
-    r.lpush(queue_name, json.dumps({"object_path": object_path}))
+def producer(queue_name: str, object_path: str, image_id: str):
+    r.lpush(queue_name, json.dumps({"object_path": object_path,
+                                     "imageId": image_id}))
     print(f"Redis 큐에 작업 추가됨 → {queue_name}: {object_path}")
 
 @router.post("/drone/photos", response_model=IngestResponse)
@@ -40,7 +41,7 @@ async def ingest_drone_photo(body: IngestRequest):
         # 5) MinIO 업로드
         put_to_minio(jpg, object_path, meta)
 
-        producer("infer_job_queue", object_path)
+        producer("infer_job_queue", object_path, str(p.imageId))
 
         return IngestResponse(message="success")
     except ValueError:
