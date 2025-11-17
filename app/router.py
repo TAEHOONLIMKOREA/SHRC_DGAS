@@ -4,6 +4,8 @@ from .services import (
     parse_iso_utc, build_object_path,
     fetch_image_bytes, to_jpeg_bytes, put_to_minio,
 )
+from .telemetry_service import sync_telemetry_range,sync_recent_telemetry
+from datetime import datetime
 from .config import settings
 from .redis_config import r
 import json
@@ -48,3 +50,18 @@ async def ingest_drone_photo(body: IngestRequest):
     except Exception as e:
         print(f"❌ 서버 내부 오류 발생: {e}")
         return IngestResponse(message="server internal error")
+    
+@router.post("/telemetry/sync")
+async def telemetry_sync(robot_id: str, from_ts: str, to_ts: str):
+    """
+    수동 Telemetry 동기화 API
+    - robot_id: 로봇 ID
+    - from_ts, to_ts: 'YYYYMMDDhhmmss' 형식
+    """
+    inserted = await sync_recent_telemetry(robot_id, from_ts, to_ts)
+    return {
+        "robot_id": robot_id,
+        "from": from_ts,
+        "to": to_ts,
+        "rows_upserted": inserted,
+    }

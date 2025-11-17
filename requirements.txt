@@ -6,3 +6,8 @@ minio==7.2.9
 pydantic==2.9.2
 python-dotenv==1.0.1
 redis
+asyncpg==0.29.0
+SQLAlchemy==2.0.36
+APScheduler==3.10.4
+python-dateutil==2.9.0.post0
+orjson==3.10.3
