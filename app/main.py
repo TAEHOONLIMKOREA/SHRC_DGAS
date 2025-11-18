@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from .router import router
 from .scheduler import start_scheduler
 import logging
+from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,6 +12,13 @@ logging.basicConfig(
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Drone Photo Ingest API", version="1.0.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],            # 또는 ["http://localhost:8080"] 로 제한 가능
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     app.include_router(router, prefix="/v1")
 
