@@ -4,7 +4,7 @@ from .services import (
     parse_iso_utc, build_object_path,
     fetch_image_bytes, to_jpeg_bytes, put_to_minio,
 )
-from .telemetry_service import sync_telemetry_range,sync_recent_telemetry
+from .telemetry_service import sync_telemetry_range,sync_recent_telemetry,get_last_update_history,run_full_update
 from datetime import datetime
 from .config import settings
 from .redis_config import r
@@ -66,3 +66,31 @@ async def telemetry_sync(robot_id: str, from_ts: str, to_ts: str):
         "to": to_ts,
         "rows_upserted": inserted,
     }
+@router.get("/telemetry/update/last")
+async def get_last_update():
+    """
+    가장 최근 telemetry 전체 업데이트 이력 조회
+    """
+    last = await get_last_update_history()
+
+    if not last:
+        return {"last_sync": None}
+
+    return {
+        "last_from_ts": last["last_from_ts"],
+        "last_to_ts": last["last_to_ts"],
+        "updated_at": last["updated_at"],
+        "rows_upserted": last["rows_upserted"]
+    }
+
+@router.post("/telemetry/update")
+async def run_update():
+    """
+    전체 telemetry 동기화 실행
+    - robots 테이블에서 robot_id 자동 조회
+    - 최근 업데이트 이력 불러옴
+    - sync_recent_telemetry 반복 실행
+    - 업데이트 이력 저장
+    """
+    result = await run_full_update()
+    return result

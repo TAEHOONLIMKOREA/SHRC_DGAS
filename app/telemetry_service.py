@@ -276,41 +276,6 @@ async def sync_telemetry_range(robot_id: str, from_ts: str, to_ts: str) -> int:
 
     return total
 
-# ---------------------------------------------------------
-# 최근 10초 등 짧은 범위 sync
-# ---------------------------------------------------------
-# async def sync_recent_telemetry(robot_id: str, from_ts: str, to_ts: str) -> int:
-
-#     print(f"\n[RECENT] {robot_id} → {from_ts} ~ {to_ts}")
-
-#     total = 0
-
-#     msg_list = await fetch_message_list(robot_id, from_ts, to_ts)
-
-#     for item in msg_list:
-#         msg_id = item.get("msgId")
-
-#         if msg_id not in MSG_TABLE_MAP:
-#             continue
-#         # time check
-#         detail = await fetch_message_detail(robot_id, msg_id, from_ts, to_ts)
-
-#         detail_list = detail if isinstance(detail, list) else [detail]
-
-#         table = MSG_TABLE_MAP[msg_id]
-
-#         # time check
-#         for payload in detail_list:
-#             print(payload)
-
-#             flat = flatten_payload(payload)
-#             print(flat)
-
-#             await save_message_to_table(table, robot_id, flat)
-#             total += 1
-
-#     return total
-
 
 async def sync_recent_telemetry(robot_id: str, from_ts: str, to_ts: str) -> int:
     start_time = time.time()
@@ -382,3 +347,100 @@ async def sync_recent_telemetry(robot_id: str, from_ts: str, to_ts: str) -> int:
     logger.info(f"[SYNC DONE] robot_id={robot_id}, total_rows={total}, elapsed={elapsed:.2f}s")       
 
     return total
+
+
+# ---------------------------------------------------------
+# 최근 업데이트 이력 조회
+# ---------------------------------------------------------
+async def get_last_update_history():
+    query = """
+        SELECT last_from_ts, last_to_ts, rows_upserted, updated_at
+        FROM shrc.telemetry_update_history
+        ORDER BY updated_at DESC
+        LIMIT 1
+    """
+
+    async with async_session() as session:
+        result = await session.execute(text(query))
+        row = result.fetchone()
+
+        if not row:
+            return None
+
+        return {
+            "last_from_ts": row[0],
+            "last_to_ts": row[1],
+            "rows_upserted": row[2],
+            "updated_at": row[3],
+        }
+
+# ---------------------------------------------------------
+# 업데이트 이력 저장
+# ---------------------------------------------------------
+async def save_update_history(from_ts: str, to_ts: str, rows_upserted: int):
+    query = """
+        INSERT INTO shrc.telemetry_update_history
+        (last_from_ts, last_to_ts, rows_upserted, updated_at)
+        VALUES (:from_ts, :to_ts, :rows_upserted, NOW())
+    """
+
+    async with async_session() as session:
+        await session.execute(
+            text(query),
+            {
+                "from_ts": from_ts,
+                "to_ts": to_ts,
+                "rows_upserted": rows_upserted,
+            },
+        )
+        await session.commit()
+
+async def get_robot_ids():
+    """
+    robots 테이블에서 모든 robot_id 리스트 조회
+    """
+    query = """
+        SELECT robot_id
+        FROM shrc.robots
+    """
+
+    async with async_session() as session:
+        result = await session.execute(text(query))
+        rows = result.fetchall()
+
+        # rows = [('abc123',), ('def456',)...] 이므로 첫 번째 컬럼만 추출
+        return [row[0] for row in rows]
+    
+# ---------------------------------------------------------
+# 전체 로봇 telemetry 업데이트 실행
+# ---------------------------------------------------------
+async def run_full_update():
+    """
+    전체 로봇 업데이트 실행:
+    1. 최근 기록 가져오기 (없으면 초기 from_ts 사용)
+    2. 각 로봇에 대해 telemetry_sync 호출
+    3. 이력 저장
+    """
+    robot_list = await get_robot_ids()
+    logger.info(f"[UPDATE] 로봇 목록 조회: {robot_list}")
+
+    last = await get_last_update_history()
+
+    # 초기값: 시스템 처음 운영할 때
+    from_ts = last["last_to_ts"] if last else datetime.now().strftime("%Y%m%d%H%M%S")
+    to_ts = datetime.now().strftime("%Y%m%d%H%M%S")
+
+    total_rows = 0
+
+    for robot_id in robot_list:
+        rows = await sync_recent_telemetry(robot_id, from_ts, to_ts)
+        total_rows += rows
+
+    # 저장
+    await save_update_history(from_ts, to_ts, total_rows)
+
+    return {
+        "from_ts": from_ts,
+        "to_ts": to_ts,
+        "rows_upserted": total_rows
+    }
