@@ -409,7 +409,7 @@ async def get_robot_ids():
         rows = result.fetchall()
 
         # rows = [('abc123',), ('def456',)...] 이므로 첫 번째 컬럼만 추출
-        return [row[0] for row in rows]
+        return [str(row[0]) for row in rows]
     
 # ---------------------------------------------------------
 # 전체 로봇 telemetry 업데이트 실행
