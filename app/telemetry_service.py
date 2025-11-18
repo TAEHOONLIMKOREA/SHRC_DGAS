@@ -401,7 +401,7 @@ async def get_robot_ids():
     """
     query = """
         SELECT robot_id
-        FROM shrc.robots
+        FROM shrc.robots WHERE model LIKE 'ARK%';
     """
 
     async with async_session() as session:
