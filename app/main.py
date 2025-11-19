@@ -3,6 +3,7 @@ from .router import router
 from .scheduler import start_scheduler
 import logging
 from fastapi.middleware.cors import CORSMiddleware
+from .telemetry_service import load_uuid_to_num, UUID_TO_NUM  # ← 추가
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +26,12 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def on_startup():
         logging.info("Start APScheduler for telemetry sync")
-        start_scheduler()
+        # start_scheduler()
+        global UUID_TO_NUM
+        mapping = await load_uuid_to_num()
+        UUID_TO_NUM.clear()
+        UUID_TO_NUM.update(mapping)
+        logging.info(f"UUID_TO_NUM loaded: {UUID_TO_NUM}")
 
     return app
 

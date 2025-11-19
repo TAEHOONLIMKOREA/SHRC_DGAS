@@ -9,6 +9,7 @@ from datetime import datetime
 from .config import settings
 from .redis_config import r
 import json
+from datetime import datetime, timedelta
 router = APIRouter()
 
 def producer(queue_name: str, object_path: str, image_id: str):
@@ -52,20 +53,52 @@ async def ingest_drone_photo(body: IngestRequest):
         print(f"❌ 서버 내부 오류 발생: {e}")
         return IngestResponse(message="server internal error")
     
+
+
 @router.post("/telemetry/sync")
 async def telemetry_sync(robot_id: str, from_ts: str, to_ts: str):
     """
     수동 Telemetry 동기화 API
-    - robot_id: 로봇 ID
+    - robot_id: 로봇 ID (UUID)
     - from_ts, to_ts: 'YYYYMMDDhhmmss' 형식
+    - 1시간 단위로 자르기
     """
-    inserted = await sync_recent_telemetry(robot_id, from_ts, to_ts)
+
+    fmt = "%Y%m%d%H%M%S"
+    start_dt = datetime.strptime(from_ts, fmt)
+    end_dt = datetime.strptime(to_ts, fmt)
+
+    total_rows = 0
+    cur_start = start_dt
+
+    while cur_start < end_dt:
+        # 1시간 뒤
+        cur_end = cur_start + timedelta(hours=1)
+        if cur_end > end_dt:
+            cur_end = end_dt
+
+        # 문자열로 변환
+        cur_from = cur_start.strftime(fmt)
+        cur_to   = cur_end.strftime(fmt)
+
+        print(f"Sync window: {cur_from} → {cur_to}")
+
+        try:
+            rows = await sync_recent_telemetry(robot_id, cur_from, cur_to)
+            total_rows += rows
+        except Exception as e:
+            print(f"❌ Error in window {cur_from} → {cur_to}: {e}")
+
+        # 다음 구간으로 이동
+        cur_start = cur_end
+
     return {
         "robot_id": robot_id,
         "from": from_ts,
         "to": to_ts,
-        "rows_upserted": inserted,
+        "rows_upserted": total_rows,
     }
+
 @router.get("/telemetry/update/last")
 async def get_last_update():
     """

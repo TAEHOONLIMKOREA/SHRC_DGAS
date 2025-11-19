@@ -57,7 +57,8 @@ MSG_TABLE_MAP = {
     141: "altitude_141",
     147: "battery_status_147",
     1101: "unknown_1101",
-    # 필요한 msgId 여기에 계속 추가
+    74: "vfr_hud_74",
+    33: "global_position_int_33"
 }
 
 # ---------------------------------------------------------
@@ -99,7 +100,15 @@ def flatten_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     return row
 
+UUID_TO_NUM = {}
 
+async def load_uuid_to_num():
+    async with async_session() as session:
+        result = await session.execute(text("""
+            SELECT robot_id, robot_num FROM shrc.robots
+        """))
+        rows = result.fetchall()
+    return {str(r.robot_id): r.robot_num for r in rows}
 # ---------------------------------------------------------
 # 메시지 목록 조회
 # ---------------------------------------------------------
@@ -132,14 +141,6 @@ async def fetch_message_detail(robot_id: str, msg_id: int, from_ts: str, to_ts: 
     res.raise_for_status()
     return orjson.loads(res.content)
 
-
-UUID_TO_NUM = {
-    "01fb056f-a3fb-4c38-9f97-ff11b9dea241": 1,
-    "163c4473-d37b-4bec-a293-208a69bd2b0d": 2,
-    "f6024fc0-e542-4858-9ff4-f7365ef914de": 3,
-    "37e05a23-0c44-4384-b48b-031ce0e33e38": 4,
-    "dce87884-1065-41f9-b50c-8f6656a8313e": 5,
-}
 # ---------------------------------------------------------
 # Timescale Hypertable 저장
 # ---------------------------------------------------------
@@ -184,6 +185,8 @@ async def save_message_to_table(table: str, robot_id: str, payload: Dict[str, An
         print(sql)
         await session.execute(text(sql), values)
         await session.commit()
+
+
 
 async def save_batch_copy_preprocessed(table: str, rows: list[dict], robot_id: str):
 
@@ -416,31 +419,58 @@ async def get_robot_ids():
 # ---------------------------------------------------------
 async def run_full_update():
     """
-    전체 로봇 업데이트 실행:
-    1. 최근 기록 가져오기 (없으면 초기 from_ts 사용)
-    2. 각 로봇에 대해 telemetry_sync 호출
-    3. 이력 저장
+    전체 로봇 업데이트 실행 (1시간 단위로 분할):
+    1. 최근 기록 가져오기
+    2. from_ts ~ to_ts 구간을 1시간씩 나눔
+    3. 각 구간마다 모든 로봇 telemetry_sync 실행
+    4. 이력 저장
     """
     robot_list = await get_robot_ids()
     logger.info(f"[UPDATE] 로봇 목록 조회: {robot_list}")
 
     last = await get_last_update_history()
 
-    # 초기값: 시스템 처음 운영할 때
-    from_ts = last["last_to_ts"] if last else datetime.now().strftime("%Y%m%d%H%M%S")
-    to_ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    # 마지막 업데이트 시간 (없으면 현재 시각 - 1시간)
+    if last:
+        from_dt = datetime.strptime(last["last_to_ts"], "%Y%m%d%H%M%S")
+    else:
+        from_dt = datetime.now() - timedelta(hours=1)
+
+    to_dt = datetime.now()
+    logger.info(f"[UPDATE] Full update from {from_dt} to {to_dt}")
 
     total_rows = 0
 
-    for robot_id in robot_list:
-        rows = await sync_recent_telemetry(robot_id, from_ts, to_ts)
-        total_rows += rows
+    # --- 📌 1시간 단위로 반복 ---
+    current_from = from_dt
+    while current_from < to_dt:
+        current_to = current_from + timedelta(hours=1)
+        if current_to > to_dt:
+            current_to = to_dt
+
+        # 문자열 변환
+        from_ts = current_from.strftime("%Y%m%d%H%M%S")
+        to_ts = current_to.strftime("%Y%m%d%H%M%S")
+
+        logger.info(f"[UPDATE] Processing window: {from_ts} ~ {to_ts}")
+
+        # --- 각 로봇 처리 ---
+        for robot_id in robot_list:
+            rows = await sync_recent_telemetry(robot_id, from_ts, to_ts)
+            total_rows += rows
+
+        # 다음 구간으로 이동
+        current_from = current_to
 
     # 저장
-    await save_update_history(from_ts, to_ts, total_rows)
+    await save_update_history(
+        from_dt.strftime("%Y%m%d%H%M%S"),
+        to_dt.strftime("%Y%m%d%H%M%S"),
+        total_rows
+    )
 
     return {
-        "from_ts": from_ts,
-        "to_ts": to_ts,
+        "from_ts": from_dt.strftime("%Y%m%d%H%M%S"),
+        "to_ts": to_dt.strftime("%Y%m%d%H%M%S"),
         "rows_upserted": total_rows
     }
